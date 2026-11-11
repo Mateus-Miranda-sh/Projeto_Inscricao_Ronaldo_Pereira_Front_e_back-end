@@ -204,23 +204,25 @@ def criar_checkout_pro():
 
 @app.route('/api/criar-pagamento-pix', methods=['POST'])
 def criar_pagamento_pix():
-    """Gera cobrança PIX com sanitização prévia."""
+    """Gera cobrança PIX com validação e logs detalhados da API do Mercado Pago."""
     try:
         corpo = request.get_json(silent=True) or {}
         dados_validados, erro = validar_e_sanitizar_dados(corpo)
         
         if erro:
+            logging.warning(f"⚠️ Validação rejeitou requisição PIX: {erro}")
             return jsonify({'sucesso': False, 'erro': erro}), 400
 
         nome = dados_validados['nome']
-        valor = dados_validados['valor']
-        email = dados_validados['email']
+        valor = float(dados_validados['valor'])  # Garantido como float
+        email = dados_validados['email'].strip().lower()
         primeiro_nome = dados_validados['primeiro_nome']
         sobrenome = dados_validados['sobrenome']
 
+        # Montagem rigorosa do payload conforme especificação oficial do Mercado Pago para PIX
         payment_data = {
             'transaction_amount': valor,
-            'description': f'Inscrição Retiro - {nome}',
+            'description': f'Inscrição Retiro - {nome[:60]}',
             'payment_method_id': 'pix',
             'payer': {
                 'email': email,
@@ -229,9 +231,17 @@ def criar_pagamento_pix():
             },
         }
 
-        logging.info(f"Requisitando Pix direto para '{nome}' com valor R$ {valor:.2f}")
+        logging.info(f"📡 Enviando chamada PIX ao Mercado Pago | Nome: '{nome}' | Email: '{email}' | Valor: R$ {valor:.2f} | Método: 'pix'")
+        
         payment_response = sdk.payment().create(payment_data)
+        status_code = payment_response.get('status')
         pagamento = payment_response.get('response', {})
+
+        logging.info(f"📥 Retorno da API Mercado Pago PIX: HTTP {status_code}")
+
+        # Se a resposta do Mercado Pago não for de sucesso (200 ou 201), loga detalhadamente
+        if status_code not in (200, 201):
+            logging.error(f"❌ Erro retornado pela API Mercado Pago: HTTP {status_code} | Resposta: {pagamento}")
 
         point_of_interaction = pagamento.get('point_of_interaction', {})
         transaction_data = point_of_interaction.get('transaction_data', {})
@@ -239,15 +249,30 @@ def criar_pagamento_pix():
         qr_code_base64 = transaction_data.get('qr_code_base64')
         qr_code_copia_cola = transaction_data.get('qr_code')
 
+        # Se a API rejeitou ou não forneceu o QR Code (ex: falta de homologação/chave pix)
         if not qr_code_base64:
-            msg_erro = pagamento.get('message') or 'Credencial não autorizada para Pix transparente.'
-            logging.warning(f"Pix direto indisponível: {msg_erro}")
+            detalhes_causa = ""
+            if pagamento.get('cause'):
+                detalhes_causa = "; ".join([
+                    c.get('description', '') for c in pagamento.get('cause', []) if isinstance(c, dict)
+                ])
+
+            msg_erro = (
+                pagamento.get('message')
+                or detalhes_causa
+                or f"Mercado Pago rejeitou geração do PIX (HTTP {status_code})."
+            )
+            logging.error(f"⚠️ Pix direto indisponível: {msg_erro} | Causas detalhadas: {detalhes_causa}")
+
             return jsonify({
                 'sucesso': False, 
-                'erro': 'Pix transparente não disponível com a credencial atual. Utilize o Checkout Pro.',
+                'erro': msg_erro,
+                'detalhe': detalhes_causa,
+                'status_http': status_code,
                 'precisa_checkout_pro': True
             }), 400
 
+        logging.info(f"✅ QR Code Pix gerado com sucesso para {nome}!")
         return jsonify({
             'sucesso': True,
             'qr_code_imagem': f'data:image/png;base64,{qr_code_base64}',
@@ -255,10 +280,10 @@ def criar_pagamento_pix():
         }), 200
 
     except Exception as e:
-        logging.error(f"Exceção interna ao gerar Pix: {str(e)}", exc_info=True)
+        logging.error(f"❌ Exceção interna não tratada ao gerar Pix: {str(e)}", exc_info=True)
         return jsonify({
             'sucesso': False, 
-            'erro': 'Erro interno ao processar Pix.'
+            'erro': 'Erro interno ao processar Pix no servidor.'
         }), 500
 
 

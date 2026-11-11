@@ -139,29 +139,69 @@ async function gerarPixNoServidor(nome, email, valor) {
 
         const dados = await resposta.json();
 
-        if (dados.sucesso && dados.qr_code_imagem) {
-            qrContainer.innerHTML = `<img src="${dados.qr_code_imagem}" alt="QR Code Pix" style="width: 100%; height: 100%; object-fit: contain; border-radius: 6px;">`;
-            codigoPixCopiaECola = dados.qr_code_copia_cola || '';
-        } else {
-            console.warn('Resposta PIX:', dados);
-            // Mensagem amigável com opção direta de pagar no Checkout Pro
+        // 1. Sucesso: QR Code gerado em Base64 e Chave Copia e Cola disponível
+        if (dados.sucesso && dados.qr_code_imagem && dados.qr_code_copia_cola) {
+            codigoPixCopiaECola = dados.qr_code_copia_cola;
+
+            // Renderiza dinamicamente a tag <img> com o Base64 retornado pelo Mercado Pago
             qrContainer.innerHTML = `
-                <div class="qr-fake" style="color: #c53030; font-size: 0.82rem; padding: 6px;">
-                    Pix direto requer homologação.<br>
-                    <button type="button" id="btnPixCheckoutPro" style="background: none; border: none; color: #2b6cb0; font-weight: bold; text-decoration: underline; cursor: pointer; display: block; margin: 8px auto 0;">
-                        Pagar no Checkout Pro do Mercado Pago &rarr;
+                <img src="${dados.qr_code_imagem}" 
+                     alt="QR Code Pix Mercado Pago" 
+                     style="width: 100%; height: 100%; object-fit: contain; border-radius: 6px;">
+            `;
+
+            if (btnCopiarPix) {
+                btnCopiarPix.textContent = 'Copiar Código PIX';
+                btnCopiarPix.style.display = 'block';
+            }
+            console.log('✅ QR Code Pix e chave Copia e Cola renderizados com sucesso!');
+
+        } else {
+            // 2. Fallback amigável: Caso a credencial precise de homologação bancária no Mercado Pago
+            console.warn('⚠️ Pix transparente indisponível na credencial atual:', dados);
+            codigoPixCopiaECola = '';
+
+            qrContainer.innerHTML = `
+                <div class="qr-fake" style="color: #2d3748; font-size: 0.84rem; padding: 12px; line-height: 1.4; text-align: center;">
+                    <span style="font-size: 1.3rem; display: block; margin-bottom: 4px;">⚡</span>
+                    <strong style="color: #2b6cb0; display: block; margin-bottom: 4px;">Pagamento Seguro via PIX</strong>
+                    <span style="font-size: 0.78rem; color: #718096; display: block; margin-bottom: 10px;">
+                        Clique abaixo para gerar o QR Code oficial no ambiente do Mercado Pago:
+                    </span>
+                    <button type="button" id="btnPixCheckoutPro" class="btn-acao" style="padding: 10px 14px; font-size: 0.85rem; width: 100%; cursor: pointer;">
+                        Abrir PIX no Mercado Pago &rarr;
                     </button>
                 </div>
             `;
+
+            // Vincula o botão interno à abertura segura do Checkout Pro
             const btnPixCheckout = document.getElementById('btnPixCheckoutPro');
             if (btnPixCheckout) {
                 btnPixCheckout.addEventListener('click', iniciarCheckoutPro);
             }
+
+            // Atualiza o botão de copiar para encaminhar ao Checkout Pro
+            if (btnCopiarPix) {
+                btnCopiarPix.textContent = 'Pagar PIX pelo Mercado Pago';
+            }
         }
     } catch (erro) {
-        console.error('Servidor offline ou erro de rede:', erro);
+        console.error('Servidor offline ou erro de rede ao tentar gerar Pix:', erro);
+        codigoPixCopiaECola = '';
         if (qrContainer) {
-            qrContainer.innerHTML = `<div class="qr-fake" style="color: #e53e3e;">Conectando ao servidor... Caso demore, o Render pode estar acordando.</div>`;
+            qrContainer.innerHTML = `
+                <div class="qr-fake" style="color: #e53e3e; font-size: 0.82rem; padding: 10px; text-align: center;">
+                    Conectando ao servidor...<br>
+                    <small style="color: #718096; display: block; margin-top: 4px;">Caso seja o primeiro acesso, o Render pode levar 30s para iniciar.</small>
+                    <button type="button" id="btnTentarNovamentePix" style="margin-top: 8px; background: #edf2f7; border: 1px solid #cbd5e0; border-radius: 4px; padding: 4px 8px; font-size: 0.78rem; cursor: pointer;">
+                        Tentar novamente
+                    </button>
+                </div>
+            `;
+            const btnTentar = document.getElementById('btnTentarNovamentePix');
+            if (btnTentar) {
+                btnTentar.addEventListener('click', () => carregarResumoInscricao());
+            }
         }
     }
 }
@@ -230,9 +270,15 @@ if (btnCopiarPix) {
     btnCopiarPix.addEventListener('click', () => {
         if (codigoPixCopiaECola) {
             navigator.clipboard.writeText(codigoPixCopiaECola)
-                .then(() => alert('Código PIX copiado com sucesso!'))
+                .then(() => {
+                    const textoOriginal = btnCopiarPix.textContent;
+                    btnCopiarPix.textContent = '✅ Código PIX Copiado!';
+                    setTimeout(() => {
+                        btnCopiarPix.textContent = textoOriginal;
+                    }, 3000);
+                })
                 .catch(() => {
-                    // Fallback caso a API de Clipboard não tenha permissão
+                    // Fallback caso a Clipboard API seja bloqueada pelo navegador
                     const inputTemp = document.createElement('textarea');
                     inputTemp.value = codigoPixCopiaECola;
                     document.body.appendChild(inputTemp);
@@ -242,7 +288,8 @@ if (btnCopiarPix) {
                     alert('Código PIX copiado com sucesso!');
                 });
         } else {
-            alert('O código PIX ainda não está disponível ou utilize o botão do Mercado Pago.');
+            // Se o Pix direto ainda não gerou código (necessita homologação), encaminha para o Checkout Pro
+            iniciarCheckoutPro();
         }
     });
 }
