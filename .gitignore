@@ -1,0 +1,34 @@
+# ==============================================================================
+# SEGURANÇA: NUNCA COLOQUE ARQUIVOS DE CREDENCIAIS / .ENV NO CONTROLE DE VERSÃO
+# ==============================================================================
+
+# Variáveis de ambiente e chaves de API secretas
+.env
+.env.*
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Logs e arquivos de banco/sessão
+*.log
+*.sqlite3
+
+# Editores e SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini

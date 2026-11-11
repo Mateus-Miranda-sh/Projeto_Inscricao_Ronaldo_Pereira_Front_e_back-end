@@ -1,0 +1,66 @@
+    <!DOCTYPE html>
+    <html lang="pt-br">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Inscrição de retiro</title>
+        <link rel="stylesheet" href="css/style.css">
+    </head>
+    <body>
+        <main class="container-retiro">
+           <div class="lado-institucional">
+            <span class="tag-grupo">Grupo de Oração Ronaldo Pereira</span>
+            <h1>Inscrição - Retiro de Mudança de fase</h1>
+            <p>Preencha o formulário abaixo para se inscrever no retiro de mudança de fase.</p>
+            <p class="frase-devocao">"São José, rogai por nós e providenciai!"</p>
+            </div>
+            <form id="forInscricao" class="lado_do_formulario">
+                <!--<Campo nome Completo>-->
+                    <div class="campo">
+                        <label for="nome">Nome Completo</label>
+                        <input type="text" id="nome" name="nome" placeholder="Digite seu nome completo" required maxlength="100">
+                    </div>
+                    <!--<Campo Email>-->
+                        <div class="campo">
+                            <label for="email">Email</label>
+                            <input type="email" id="email" name="email" placeholder="seuemail@exemplo.com" required maxlength="100">
+                        </div>
+                    <!--<Campo Telefone>-->
+                        <div class="campo">
+                            <label for="telefone">Telefone</label>
+                            <input type="tel" id="telefone" name="telefone" placeholder="(00) 00000-0000" required maxlength="11" minlength="10" pattern="[0-9]{10,11}">
+                        </div>
+                        <!--<opção de inscrição>-->
+                            <div class="campo">
+                                <label> Escolha a sua opção</label>
+
+                                <!--<Sem o Estudo Biblico (R$ 50)>-->
+                                    <div class="opcao_de_inscricao">
+                                        <input type="radio" id="semEstudoBiblico" name="opcaoInscricao" value="50">
+                                        <label for="semEstudoBiblico">Inscrição Sem Estudo Biblico -R$ 50</label>
+                                        <p class="aviso" >Ao escolher esta opção, você fará sua inscrição mas não receberá o estudo bíblico, que utilizaremos após o retiro.</p>
+                                    </div>
+                            
+                                    <!--<Com o Estudo Biblico (R$ 80)>-->
+                                    <div class="opcao_de_inscricao">
+                                        <input type="radio" id="comEstudoBiblico" name="opcaoInscricao" value="80" checked>
+                                        <label for="comEstudoBiblico">Inscrição Com Estudo Biblico -R$ 80</label>
+                                        <p class="aviso" >Ao escolher esta opção, você fará sua inscrição e receberá o estudo bíblico, que utilizaremos após o retiro.</p>
+                                    </div>
+                                    
+                                    <!--<Exibição do valor total de agamento>-->
+                            </div>
+                            <div class="total-box">
+                                <span>Total a pagar</span>
+                                <strong id="valorTotalDaInscricao">R$ 80,00</strong>
+                            </div>
+                                <!--<Botão para enviar>-->
+                                <button type="submit" id="btnPagamento">Ir para o Pagamento</button>                          
+
+                            
+            </form>
+        </main>
+        <script src="js/utilitarios.js"></script>
+        <script src="js/script.js"></script>
+    </body>
+    </html>

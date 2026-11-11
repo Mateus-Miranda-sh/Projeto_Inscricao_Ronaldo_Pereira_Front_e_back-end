@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pagamento - Retiro de Mudança de Fase</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <!-- Container Principal (a classe pagina-pagamento ajusta o layout só desta página) -->
+    <main class="container-retiro pagina-pagamento">
+
+        <a href="index.html" class="link-voltar">&larr; Voltar para a inscrição</a>
+
+        <div class="lado-institucional">
+            <span class="tag-grupo">Grupo de Oração Ronaldo Pereira</span>
+            <h1>Pagamento da Inscrição</h1>
+        </div>
+
+        <!-- Resumo: o pagamento.js escreve o nome e o valor aqui dentro -->
+        <div class="resumo-inscricao">
+            <p><strong>Inscrito:</strong> <span id="resumoNome">-</span></p>
+            <p><strong>Valor Total:</strong> <span id="resumoValor">-</span></p>
+        </div>
+
+        <!-- Botões para escolher a forma de pagamento -->
+        <div class="opcoes-pagamento">
+            <button type="button" class="btn-opcao-pagamento active" id="btnOpcaoPix">
+                ⚡ Pagar via PIX (Aprovação Instantânea)
+            </button>
+            <button type="button" class="btn-opcao-pagamento" id="btnOpcaoCartao">
+                💳 Pagar com Cartão de Crédito
+            </button>
+        </div>
+
+        <!-- Área do PIX (visível por padrão) -->
+        <div id="areaPix" class="area-pagamento-detalhe">
+            <p class="instrucao">Escaneie o QR Code ou copie o código Pix abaixo:</p>
+            <div class="qr-code-placeholder">
+                <div class="qr-fake">Aguardando geração do QR Code...</div>
+            </div>
+            <button type="button" id="btnCopiarPix" class="btn-copiar">Copiar Código PIX</button>
+        </div>
+
+        <!-- Área do Cartão (escondida por padrão) -->
+        <div id="areaCartao" class="area-pagamento-detalhe" style="display: none;">
+            <p class="instrucao">
+                Você será levado para uma página segura do Mercado Pago para efetuar o pagamento via Cartão ou outras formas pelo Checkout Pro.
+            </p>
+            <button type="button" id="btnIrCartao" class="btn-acao">Continuar para o Mercado Pago</button>
+        </div>
+
+    </main>
+
+    <script src="js/utilitarios.js"></script>
+    <script src="js/pagamento.js"></script>
+</body>
+</html>
