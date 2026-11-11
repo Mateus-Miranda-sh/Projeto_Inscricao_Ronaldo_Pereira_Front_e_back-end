@@ -27,19 +27,12 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024  # 16 KB
 # Whitelist estrita de valores de inscrição (prevenção contra manipulação de preço / BOLA)
 VALORES_PERMITIDOS = {50.0, 80.0}
 
-# Configuração restrita de CORS (não expor como wildcard '*' em produção)
-ALLOWED_ORIGINS = [
-    origem.strip() for origem in os.getenv(
-        'ALLOWED_ORIGINS',
-        'http://127.0.0.1:5500,http://localhost:5500,http://127.0.0.1:5000,http://localhost:5000'
-    ).split(',') if origem.strip()
-]
-
+# Habilita CORS para permitir requisições vindas da Vercel, localhost e qualquer origem autorizada
 CORS(app, resources={
-    r"/api/*": {
-        "origins": ALLOWED_ORIGINS,
-        "methods": ["POST", "GET", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
     }
 })
 
@@ -62,7 +55,6 @@ def aplicar_cabecalhos_seguranca(response):
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Content-Security-Policy'] = "default-src 'self'"
     return response
 
 

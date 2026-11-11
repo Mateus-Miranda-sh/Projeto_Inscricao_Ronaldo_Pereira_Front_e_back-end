@@ -4,7 +4,12 @@
  * pagamentos (Pix e Checkout Pro) com o Mercado Pago através do app.py.
  */
 
-// 1. Mapeamento de Elementos do DOM
+// 1. Configuração de URL da API (Render em produção ou Localhost em desenvolvimento)
+const API_URL = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
+    ? 'http://127.0.0.1:5000'
+    : 'https://projeto-inscricao-ronaldo-pereira-front.onrender.com';
+
+// 2. Mapeamento de Elementos do DOM
 const resumoNome = document.getElementById('resumoNome');
 const resumoValor = document.getElementById('resumoValor');
 
@@ -120,7 +125,7 @@ async function gerarPixNoServidor(nome, email, valor) {
         if (!qrContainer) return;
         qrContainer.innerHTML = `<div class="qr-fake">Gerando QR Code Pix...</div>`;
 
-        const resposta = await fetch('https://projeto-inscricao-ronaldo-pereira-front.onrender.com', {
+        const resposta = await fetch(`${API_URL}/api/criar-pagamento-pix`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -154,9 +159,9 @@ async function gerarPixNoServidor(nome, email, valor) {
             }
         }
     } catch (erro) {
-        console.error('Servidor Flask offline ou erro de rede:', erro);
+        console.error('Servidor offline ou erro de rede:', erro);
         if (qrContainer) {
-            qrContainer.innerHTML = `<div class="qr-fake" style="color: #e53e3e;">Servidor offline (Inicie o app.py no terminal)</div>`;
+            qrContainer.innerHTML = `<div class="qr-fake" style="color: #e53e3e;">Conectando ao servidor... Caso demore, o Render pode estar acordando.</div>`;
         }
     }
 }
@@ -173,7 +178,7 @@ async function iniciarCheckoutPro() {
     }
 
     try {
-        const resposta = await fetch('https://projeto-inscricao-ronaldo-pereira-front.onrender.com', {
+        const resposta = await fetch(`${API_URL}/api/criar-preferencia`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -200,7 +205,7 @@ async function iniciarCheckoutPro() {
         }
     } catch (erro) {
         console.error('Erro de conexão com o servidor ao gerar Checkout Pro:', erro);
-        alert('Não foi possível conectar ao servidor backend (app.py). Verifique se o Flask está rodando na porta 5000.');
+        alert(`Não foi possível conectar ao servidor (${API_URL}). Verifique sua conexão ou aguarde alguns segundos caso o servidor no Render esteja iniciando.`);
         if (btnIrCartao) {
             btnIrCartao.disabled = false;
             btnIrCartao.textContent = 'Continuar para o Mercado Pago';
