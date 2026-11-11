@@ -120,7 +120,7 @@ async function gerarPixNoServidor(nome, email, valor) {
         if (!qrContainer) return;
         qrContainer.innerHTML = `<div class="qr-fake">Gerando QR Code Pix...</div>`;
 
-        const resposta = await fetch('http://127.0.0.1:5000/api/criar-pagamento-pix', {
+        const resposta = await fetch('https://projeto-inscricao-ronaldo-pereira-front.onrender.com/api/criar-pagamento-pix', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -173,7 +173,7 @@ async function iniciarCheckoutPro() {
     }
 
     try {
-        const resposta = await fetch('http://127.0.0.1:5000/api/criar-preferencia', {
+        const resposta = await fetch('https://projeto-inscricao-ronaldo-pereira-front.onrender.com/api/criar-preferencia', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
