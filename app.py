@@ -279,4 +279,3 @@ if __name__ == '__main__':
     porta = int(os.getenv('PORT', 5000))
     logging.info(f"Iniciando servidor na porta {porta} (Debug={debug_mode})...")
     app.run(debug=debug_mode, port=porta)
-app.run 
