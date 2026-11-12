@@ -1,10 +1,18 @@
 import os
 import re
+import io
+import base64
+import unicodedata
 import logging
 import mercadopago
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+
+try:
+    import qrcode
+except ImportError:
+    qrcode = None
 
 # Configuração de logging estruturado
 logging.basicConfig(
@@ -21,13 +29,9 @@ app = Flask(__name__)
 # 1. HARDENING DE SEGURANÇA: Configurações Globais
 # ------------------------------------------------------------------------------
 
-# Limite de tamanho de payload para prevenir DoS (Buffer / Memory exhaustion)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024  # 16 KB
-
-# Whitelist estrita de valores de inscrição (prevenção contra manipulação de preço / BOLA)
 VALORES_PERMITIDOS = {50.0, 80.0}
 
-# Habilita CORS para permitir requisições vindas da Vercel, localhost e qualquer origem autorizada
 CORS(app, resources={
     r"/*": {
         "origins": "*",
@@ -36,7 +40,6 @@ CORS(app, resources={
     }
 })
 
-# Leitura segura do Token do Mercado Pago
 MERCADO_PAGO_ACCESS_TOKEN = os.getenv('MERCADO_PAGO_ACCESS_TOKEN')
 
 if not MERCADO_PAGO_ACCESS_TOKEN:
@@ -58,53 +61,105 @@ def aplicar_cabecalhos_seguranca(response):
     return response
 
 
+def remover_acentos(texto: str) -> str:
+    """Remove acentos e caracteres especiais exigidos pelo padrão EMV do Banco Central."""
+    nfkd = unicodedata.normalize('NFKD', texto)
+    return "".join([c for c in nfkd if not unicodedata.combining(c)])
+
+
+def gerar_brcode_pix_padrao(valor: float, nome: str, cidade: str, chave: str) -> str:
+    """Gera o código Pix Copia e Cola (BR Code) no padrão oficial do Banco Central com CRC16 válido."""
+    valor_str = f"{valor:.2f}"
+    nome_sanitizado = remover_acentos(nome)[:25].upper()
+    cidade_sanitizada = remover_acentos(cidade)[:15].upper()
+    chave_limpa = chave.strip()
+
+    # Campo 26: Merchant Account Information (calcula o tamanho dinâmico para qualquer tipo de chave)
+    gui = "0014br.gov.bcb.pix"
+    campo_chave = f"01{len(chave_limpa):02d}{chave_limpa}"
+    merchant_account = f"{gui}{campo_chave}"
+    campo_26 = f"26{len(merchant_account):02d}{merchant_account}"
+
+    payload = (
+        f"000201"
+        f"{campo_26}"
+        f"52040000"
+        f"5303986"
+        f"54{len(valor_str):02d}{valor_str}"
+        f"5802BR"
+        f"59{len(nome_sanitizado):02d}{nome_sanitizado}"
+        f"60{len(cidade_sanitizada):02d}{cidade_sanitizada}"
+        f"62070503***"
+        f"6304"
+    )
+
+    crc = 0xFFFF
+    for char in payload.encode('utf-8'):
+        crc ^= (char << 8)
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    return f"{payload}{crc:04X}"
+
+
+def gerar_qr_code_pix_base64(codigo_pix: str) -> str:
+    """Renderiza a imagem PNG do QR Code Pix em Base64 para exibição imediata no frontend."""
+    if qrcode is not None:
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=8,
+            border=2
+        )
+        qr.add_data(codigo_pix)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color='black', back_color='white')
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        return base64.b64encode(buf.getvalue()).decode('utf-8')
+    return ""
+
+
 # ------------------------------------------------------------------------------
 # 3. HIGIENIZAÇÃO E VALIDAÇÃO ESTRITA DE ENTRADA (Defesa em Profundidade)
 # ------------------------------------------------------------------------------
 REGEX_EMAIL = re.compile(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$')
 REGEX_NOME = re.compile(r"^[a-zA-ZÀ-ÿ\s'.-]{3,100}$")
 
+
 def validar_e_sanitizar_dados(dados):
-    """
-    Executa sanitização e validação estrita contra Parameter Tampering,
-    Injections e valores anômalos. Retorna (dados_limpos, erro_str).
-    """
     if not isinstance(dados, dict):
         return None, "Corpo da requisição deve ser um JSON válido."
 
-    # 1. Validação de Preço (Anti-Tampering)
     valor_bruto = dados.get('valor')
     if valor_bruto is None or valor_bruto == '':
         return None, "O valor da inscrição é obrigatório."
-    
+
     try:
         limpo = str(valor_bruto).replace('R$', '').replace(' ', '').replace(',', '.')
         valor = float(limpo)
     except (ValueError, TypeError):
         return None, "Formato de valor numérico inválido."
 
-    # Bloqueia qualquer tentativa de alterar o valor para 0.01 ou qualquer número arbitrário
     if valor not in VALORES_PERMITIDOS:
         logging.warning(f"🚨 ALERTA RED TEAM: Tentativa de manipulação de valor detectada! Valor recebido: {valor}")
         return None, f"Valor não autorizado. Os valores permitidos são: {', '.join(str(v) for v in sorted(VALORES_PERMITIDOS))}."
 
-    # 2. Validação e Sanitização de Nome
     nome = str(dados.get('nome') or '').strip()
     if not nome or not REGEX_NOME.match(nome):
         return None, "Nome inválido. Deve conter apenas letras e ter entre 3 e 100 caracteres."
 
-    # 3. Validação e Sanitização de E-mail
     email = str(dados.get('email') or '').strip().lower()
     if not email or len(email) > 100 or not REGEX_EMAIL.match(email):
         return None, "E-mail inválido ou mal formatado."
 
-    # 4. Validação e Sanitização de Telefone
     telefone_bruto = str(dados.get('telefone') or '')
     telefone = re.sub(r'\D', '', telefone_bruto)
     if telefone and (len(telefone) < 10 or len(telefone) > 11):
         return None, "Telefone inválido. Deve conter DDD + número (10 ou 11 dígitos)."
 
-    # Separação segura de primeiro nome e sobrenome
     partes_nome = nome.split()
     primeiro_nome = partes_nome[0]
     sobrenome = ' '.join(partes_nome[1:]) if len(partes_nome) > 1 else 'Participante'
@@ -138,7 +193,7 @@ def criar_checkout_pro():
     try:
         corpo = request.get_json(silent=True) or {}
         dados_validados, erro = validar_e_sanitizar_dados(corpo)
-        
+
         if erro:
             return jsonify({'sucesso': False, 'erro': erro}), 400
 
@@ -194,85 +249,58 @@ def criar_checkout_pro():
         }), 200
 
     except Exception as e:
-        # Não vazar detalhes internos da exceção ao cliente (Information Disclosure CWE-209)
         logging.error(f"Exceção interna ao gerar Checkout Pro: {str(e)}", exc_info=True)
         return jsonify({
-            'sucesso': False, 
+            'sucesso': False,
             'erro': 'Erro interno ao processar solicitação de pagamento.'
         }), 500
 
 
 @app.route('/api/criar-pagamento-pix', methods=['POST'])
 def criar_pagamento_pix():
-    """Gera cobrança PIX com validação e logs detalhados da API do Mercado Pago."""
+    """Gera QR Code PIX oficial (BR Code) diretamente no servidor usando a chave configurada."""
     try:
         corpo = request.get_json(silent=True) or {}
         dados_validados, erro = validar_e_sanitizar_dados(corpo)
-        
+
         if erro:
             logging.warning(f"⚠️ Validação rejeitou requisição PIX: {erro}")
             return jsonify({'sucesso': False, 'erro': erro}), 400
 
-        nome = dados_validados['nome']
-        valor = float(dados_validados['valor'])  # Garantido como float
-        email = dados_validados['email'].strip().lower()
-        primeiro_nome = dados_validados['primeiro_nome']
-        sobrenome = dados_validados['sobrenome']
+        nome_inscrito = dados_validados['nome']
+        valor = float(dados_validados['valor'])
 
-        # Montagem rigorosa do payload conforme especificação oficial do Mercado Pago para PIX
-        payment_data = {
-            'transaction_amount': valor,
-            'description': f'Inscrição Retiro - {nome[:60]}',
-            'payment_method_id': 'pix',
-            'payer': {
-                'email': email,
-                'first_name': primeiro_nome,
-                'last_name': sobrenome,
-            },
-        }
+        # Lê as variáveis configuradas no painel Environment do Render
+        chave_pix = os.getenv('CHAVE_PIX', '').strip()
+        nome_recebedor = os.getenv('NOME_RECEBEDOR', 'Retiro Ronaldo Pereira').strip()
+        cidade_recebedor = os.getenv('CIDADE_RECEBEDOR', 'JUAZEIRO').strip()
 
-        logging.info(f"📡 Enviando chamada PIX ao Mercado Pago | Nome: '{nome}' | Email: '{email}' | Valor: R$ {valor:.2f} | Método: 'pix'")
-        
-        payment_response = sdk.payment().create(payment_data)
-        status_code = payment_response.get('status')
-        pagamento = payment_response.get('response', {})
-
-        logging.info(f"📥 Retorno da API Mercado Pago PIX: HTTP {status_code}")
-
-        # Se a resposta do Mercado Pago não for de sucesso (200 ou 201), loga detalhadamente
-        if status_code not in (200, 201):
-            logging.error(f"❌ Erro retornado pela API Mercado Pago: HTTP {status_code} | Resposta: {pagamento}")
-
-        point_of_interaction = pagamento.get('point_of_interaction', {})
-        transaction_data = point_of_interaction.get('transaction_data', {})
-
-        qr_code_base64 = transaction_data.get('qr_code_base64')
-        qr_code_copia_cola = transaction_data.get('qr_code')
-
-        # Se a API rejeitou ou não forneceu o QR Code (ex: falta de homologação/chave pix)
-        if not qr_code_base64:
-            detalhes_causa = ""
-            if pagamento.get('cause'):
-                detalhes_causa = "; ".join([
-                    c.get('description', '') for c in pagamento.get('cause', []) if isinstance(c, dict)
-                ])
-
-            msg_erro = (
-                pagamento.get('message')
-                or detalhes_causa
-                or f"Mercado Pago rejeitou geração do PIX (HTTP {status_code})."
-            )
-            logging.error(f"⚠️ Pix direto indisponível: {msg_erro} | Causas detalhadas: {detalhes_causa}")
-
+        if not chave_pix:
+            logging.error("❌ CHAVE_PIX não está configurada nas variáveis de ambiente!")
             return jsonify({
-                'sucesso': False, 
-                'erro': msg_erro,
-                'detalhe': detalhes_causa,
-                'status_http': status_code,
-                'precisa_checkout_pro': True
-            }), 400
+                'sucesso': False,
+                'erro': 'Chave PIX do recebedor não configurada no servidor.'
+            }), 500
 
-        logging.info(f"✅ QR Code Pix gerado com sucesso para {nome}!")
+        # 1. Gera o payload oficial Copia e Cola (000201...)
+        qr_code_copia_cola = gerar_brcode_pix_padrao(
+            valor=valor,
+            nome=nome_recebedor,
+            cidade=cidade_recebedor,
+            chave=chave_pix
+        )
+
+        # 2. Desenha a imagem PNG do QR Code em Base64
+        qr_code_base64 = gerar_qr_code_pix_base64(qr_code_copia_cola)
+
+        if not qr_code_base64:
+            logging.error("❌ Biblioteca qrcode falhou ao gerar a imagem Base64.")
+            return jsonify({
+                'sucesso': False,
+                'erro': 'Falha interna ao desenhar a imagem do QR Code.'
+            }), 500
+
+        logging.info(f"✅ QR Code Pix gerado localmente com sucesso para '{nome_inscrito}' (R$ {valor:.2f})!")
         return jsonify({
             'sucesso': True,
             'qr_code_imagem': f'data:image/png;base64,{qr_code_base64}',
@@ -282,7 +310,7 @@ def criar_pagamento_pix():
     except Exception as e:
         logging.error(f"❌ Exceção interna não tratada ao gerar Pix: {str(e)}", exc_info=True)
         return jsonify({
-            'sucesso': False, 
+            'sucesso': False,
             'erro': 'Erro interno ao processar Pix no servidor.'
         }), 500
 
@@ -291,7 +319,6 @@ def criar_pagamento_pix():
 # 5. INICIALIZAÇÃO
 # ------------------------------------------------------------------------------
 if __name__ == '__main__':
-    # Debug SEMPRE desligado por padrão; habilitável apenas via variável de ambiente explícita
     debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
     porta = int(os.getenv('PORT', 5000))
     logging.info(f"Iniciando servidor na porta {porta} (Debug={debug_mode})...")
