@@ -5,6 +5,8 @@ import base64
 import unicodedata
 import logging
 import mercadopago
+import json
+import urllib.request
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -102,6 +104,32 @@ def gerar_brcode_pix_padrao(valor: float, nome: str, cidade: str, chave: str) ->
             else:
                 crc = (crc << 1) & 0xFFFF
     return f"{payload}{crc:04X}"
+
+
+def salvar_na_planilha_google(nome: str, email: str, telefone: str, valor: float, metodo: str):
+    """Envia os dados do inscrito para o Google Sheets via Apps Script Webhook."""
+    webhook_url = os.getenv('GOOGLE_SHEETS_WEBHOOK', '').strip()
+    if not webhook_url:
+        return
+    try:
+        payload = json.dumps({
+            'nome': nome,
+            'email': email,
+            'telefone': telefone or 'Não informado',
+            'valor': f"R$ {valor:.2f}".replace('.', ','),
+            'metodo': metodo
+        }).encode('utf-8')
+
+        req = urllib.request.Request(
+            webhook_url,
+            data=payload,
+            headers={'Content-Type': 'application/json'},
+            method='POST'
+        )
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            logging.info(f"📊 Inscrição de '{nome}' salva no Google Sheets (HTTP {resp.status})")
+    except Exception as e:
+        logging.error(f"⚠️ Falha ao salvar na planilha Google (não bloqueia pagamento): {e}")
 
 
 def gerar_qr_code_pix_base64(codigo_pix: str) -> str:
@@ -241,6 +269,8 @@ def criar_checkout_pro():
             logging.error(f"Erro Mercado Pago: {msg_erro}")
             return jsonify({'sucesso': False, 'erro': 'Não foi possível gerar a sessão de pagamento.'}), 400
 
+        salvar_na_planilha_google(nome, email, dados_validados['telefone'], valor, 'Cartão / Checkout Pro')
+
         return jsonify({
             'sucesso': True,
             'init_point': link_checkout,
@@ -299,6 +329,8 @@ def criar_pagamento_pix():
                 'sucesso': False,
                 'erro': 'Falha interna ao desenhar a imagem do QR Code.'
             }), 500
+
+        salvar_na_planilha_google(nome_inscrito, dados_validados['email'], dados_validados['telefone'], valor, 'PIX Direto')
 
         logging.info(f"✅ QR Code Pix gerado localmente com sucesso para '{nome_inscrito}' (R$ {valor:.2f})!")
         return jsonify({
